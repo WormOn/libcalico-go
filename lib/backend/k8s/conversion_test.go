@@ -37,11 +37,35 @@ var _ = Describe("Test parsing strings", func() {
 		Expect(podName).To(Equal("podName"))
 	})
 
-	It("should parse policy names", func() {
-		name := "Namespace.policyName"
-		ns, polName := c.parsePolicyName(name)
+	It("should parse valid policy names", func() {
+		// Parse a NetworkPolicy backed Policy.
+		name := "np.projectcalico.org/Namespace.policyName"
+		ns, polName, err := c.parsePolicyNameNetworkPolicy(name)
+		Expect(err).NotTo(HaveOccurred())
 		Expect(ns).To(Equal("Namespace"))
 		Expect(polName).To(Equal("policyName"))
+
+		// Parse a Namespace backed Policy.
+		name = "ns.projectcalico.org/Namespace"
+		ns, err = c.parsePolicyNameNamespace(name)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ns).To(Equal("Namespace"))
+
+	})
+
+	It("should not parse invalid policy names", func() {
+		name := "something.projectcalico.org/Namespace.Name"
+
+		// As a NetworkPolicy.
+		ns, polName, err := c.parsePolicyNameNetworkPolicy(name)
+		Expect(err).To(HaveOccurred())
+		Expect(ns).To(Equal(""))
+		Expect(polName).To(Equal(""))
+
+		// As a Namespace.
+		ns, err = c.parsePolicyNameNamespace(name)
+		Expect(err).To(HaveOccurred())
+		Expect(ns).To(Equal(""))
 	})
 
 	It("should parse profile names", func() {
@@ -206,7 +230,7 @@ var _ = Describe("Test NetworkPolicy conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Assert key fields are correct.
-		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("default.testPolicy"))
+		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("np.projectcalico.org/default.testPolicy"))
 
 		// Assert value fields are correct.
 		Expect(int(*pol.Value.(*model.Policy).Order)).To(Equal(1000))
@@ -234,7 +258,7 @@ var _ = Describe("Test NetworkPolicy conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Assert key fields are correct.
-		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("default.testPolicy"))
+		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("np.projectcalico.org/default.testPolicy"))
 
 		// Assert value fields are correct.
 		Expect(int(*pol.Value.(*model.Policy).Order)).To(Equal(1000))
@@ -259,7 +283,7 @@ var _ = Describe("Test NetworkPolicy conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Assert key fields are correct.
-		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("default.testPolicy"))
+		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("np.projectcalico.org/default.testPolicy"))
 
 		// Assert value fields are correct.
 		Expect(int(*pol.Value.(*model.Policy).Order)).To(Equal(1000))
@@ -292,7 +316,7 @@ var _ = Describe("Test NetworkPolicy conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Assert key fields are correct.
-		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("default.testPolicy"))
+		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("np.projectcalico.org/default.testPolicy"))
 
 		// Assert value fields are correct.
 		Expect(int(*pol.Value.(*model.Policy).Order)).To(Equal(1000))
@@ -329,7 +353,7 @@ var _ = Describe("Test NetworkPolicy conversion", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Assert key fields are correct.
-		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("default.testPolicy"))
+		Expect(pol.Key.(model.PolicyKey).Name).To(Equal("np.projectcalico.org/default.testPolicy"))
 
 		// Assert value fields are correct.
 		Expect(int(*pol.Value.(*model.Policy).Order)).To(Equal(1000))

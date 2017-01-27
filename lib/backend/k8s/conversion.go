@@ -63,13 +63,32 @@ func (c converter) parseWorkloadID(workloadID string) (string, string) {
 	return splits[0], splits[1]
 }
 
-// parsePolicyName extracts the Namespace and NetworkPolicy name from the given Policy name.
-func (c converter) parsePolicyName(name string) (string, string) {
-	splits := strings.SplitN(name, ".", 2)
-	if len(splits) != 2 {
-		return "", ""
+// parsePolicyNameNamespace extracts the Kubernetes Namespace that backs the given Policy.
+func (c converter) parsePolicyNameNamespace(name string) (string, error) {
+	// Policy objects backed by Namespaces have form "ns.projectcalico.org/<ns_name>"
+	if !strings.HasPrefix(name, "ns.projectcalico.org") {
+		// This is not backed by a Kubernetes Namespace.
+		return "", fmt.Errorf("Policy %s not backed by a Namespace", name)
 	}
-	return splits[0], splits[1]
+
+	return strings.TrimPrefix(name, "ns.projectcalico.org/"), nil
+
+}
+
+// parsePolicyNameNetworkPolicy extracts the Kubernetes Namespace and NetworkPolicy that backs the given Policy.
+func (c converter) parsePolicyNameNetworkPolicy(name string) (string, string, error) {
+	// Policies backed by NetworkPolicies have form "np.projectcalico.org/<ns_name>.<np_name>
+	if !strings.HasPrefix(name, "np.projectcalico.org") {
+		// This is not backed by a Kubernetes NetworkPolicy.
+		return "", "", fmt.Errorf("Policy %s not backed by a NetworkPolicy", name)
+	}
+
+	splits := strings.SplitN(strings.TrimPrefix(name, "np.projectcalico.org/"), ".", 2)
+	if len(splits) != 2 {
+		return "", "", fmt.Errorf("Name does not include both Namespace and NetworkPolicy: %s", name)
+	}
+	// Return Namespace, NetworkPolicy name.
+	return splits[0], splits[1], nil
 }
 
 // parseProfileName extracts the Namespace name from the given Profile name.
@@ -79,6 +98,41 @@ func (c converter) parseProfileName(profileName string) (string, error) {
 		return "", goerrors.New(fmt.Sprintf("Invalid profile name: %s", profileName))
 	}
 	return splits[1], nil
+}
+
+// namespaceToPolicy converts a Namespace to a Policy.
+func (c converter) namespaceToPolicy(ns *kapiv1.Namespace) (*model.KVPair, error) {
+	// Determine the ingress action based off the DefaultDeny annotation.
+	ingressAction := "allow"
+	for k, v := range ns.ObjectMeta.Annotations {
+		if k == policyAnnotation {
+			np := namespacePolicy{}
+			if err := json.Unmarshal([]byte(v), &np); err != nil {
+				return nil, goerrors.New(fmt.Sprint("failed to parse annotation: %s", err))
+			}
+			if np.Ingress.Isolation == "DefaultDeny" {
+				ingressAction = "deny"
+			}
+		}
+	}
+
+	// Generate the labels to apply to the profile.
+	labels := map[string]string{}
+	for k, v := range ns.ObjectMeta.Labels {
+		labels[fmt.Sprintf("k8s_ns/label/%s", k)] = v
+	}
+
+	name := fmt.Sprintf("ns.projectcalico.org/%s", ns.ObjectMeta.Name)
+	kvp := model.KVPair{
+		Key: model.PolicyKey{Name: name},
+		Value: &model.Policy{
+			Selector:      fmt.Sprintf("calico/k8s_ns == '%s'", ns.Name),
+			InboundRules:  []model.Rule{model.Rule{Action: ingressAction}},
+			OutboundRules: []model.Rule{model.Rule{Action: "allow"}},
+		},
+		Revision: ns.ObjectMeta.ResourceVersion,
+	}
+	return &kvp, nil
 }
 
 func (c converter) namespaceToProfile(ns *kapiv1.Namespace) (*model.KVPair, error) {
@@ -102,7 +156,7 @@ func (c converter) namespaceToProfile(ns *kapiv1.Namespace) (*model.KVPair, erro
 		labels[fmt.Sprintf("k8s_ns/label/%s", k)] = v
 	}
 
-	name := fmt.Sprintf("k8s_ns.%s", ns.ObjectMeta.Name)
+	name := fmt.Sprintf("ns.projectcalico.org/%s", ns.ObjectMeta.Name)
 	kvp := model.KVPair{
 		Key: model.ProfileKey{Name: name},
 		Value: &model.Profile{
@@ -162,7 +216,7 @@ func (c converter) hasIPAddress(pod *kapiv1.Pod) bool {
 
 func (c converter) podToWorkloadEndpoint(pod *kapiv1.Pod) (*model.KVPair, error) {
 	// Pull out the profile and workload ID based on pod name and Namespace.
-	profile := fmt.Sprintf("k8s_ns.%s", pod.ObjectMeta.Namespace)
+	profile := fmt.Sprintf("ns.projectcalico.org/%s", pod.ObjectMeta.Namespace)
 	workload := fmt.Sprintf("%s.%s", pod.ObjectMeta.Namespace, pod.ObjectMeta.Name)
 
 	// If the pod doesn't have an IP address yet, then it hasn't gone through CNI.
@@ -211,7 +265,7 @@ func (c converter) podToWorkloadEndpoint(pod *kapiv1.Pod) (*model.KVPair, error)
 // networkPolicyToPolicy converts a k8s NetworkPolicy to a model.KVPair.
 func (c converter) networkPolicyToPolicy(np *extensions.NetworkPolicy) (*model.KVPair, error) {
 	// Pull out important fields.
-	policyName := fmt.Sprintf("%s.%s", np.ObjectMeta.Namespace, np.ObjectMeta.Name)
+	policyName := fmt.Sprintf("np.projectcalico.org/%s.%s", np.ObjectMeta.Namespace, np.ObjectMeta.Name)
 	order := float64(1000.0)
 
 	// Generate the inbound rules list.

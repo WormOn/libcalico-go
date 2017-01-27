@@ -200,7 +200,7 @@ var _ = Describe("Test Syncer API for Kubernetes backend", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Perform a Get and ensure no error in the Calico API.
-		_, err = c.Get(model.PolicyKey{Name: fmt.Sprintf("default.%s", np.ObjectMeta.Name)})
+		_, err = c.Get(model.PolicyKey{Name: fmt.Sprintf("np.projectcalico.org/default.%s", np.ObjectMeta.Name)})
 		Expect(err).NotTo(HaveOccurred())
 	})
 
