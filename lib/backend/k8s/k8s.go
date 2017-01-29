@@ -598,8 +598,10 @@ func (c *KubeClient) getPolicy(k model.PolicyKey) (*model.KVPair, error) {
 			return nil, resources.K8sErrorToCalico(err, k)
 		}
 		return c.converter.namespaceToPolicy(ns)
+	} else {
+		// Received a Get() for a Policy that doesn't exist.
+		return nil, errors.ErrorResourceDoesNotExist{Identifier: k}
 	}
-
 }
 
 func (c *KubeClient) getReadyStatus(k model.ReadyFlagKey) (*model.KVPair, error) {

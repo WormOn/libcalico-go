@@ -371,10 +371,14 @@ var _ = Describe("Test Namespace conversion", func() {
 	// Use a single instance of the converter for these tests.
 	c := converter{}
 
-	It("should parse a Namespace to a Profile with allow rules", func() {
+	It("should parse a Namespace to a Profile", func() {
 		ns := k8sapi.Namespace{
 			ObjectMeta: k8sapi.ObjectMeta{
-				Name:        "default",
+				Name: "default",
+				Labels: map[string]string{
+					"foo":   "bar",
+					"roger": "rabbit",
+				},
 				Annotations: map[string]string{},
 			},
 			Spec: k8sapi.NamespaceSpec{},
@@ -386,13 +390,16 @@ var _ = Describe("Test Namespace conversion", func() {
 		// Ensure rules are correct.
 		inboundRules := p.Value.(*model.Profile).Rules.InboundRules
 		outboundRules := p.Value.(*model.Profile).Rules.OutboundRules
-		Expect(len(inboundRules)).To(Equal(1))
-		Expect(len(outboundRules)).To(Equal(1))
-		Expect(inboundRules[0].Action).To(Equal("allow"))
-		Expect(outboundRules[0].Action).To(Equal("allow"))
+		Expect(len(inboundRules)).To(Equal(0))
+		Expect(len(outboundRules)).To(Equal(0))
+
+		// Check labels.
+		labels := p.Value.(*model.Profile).Labels
+		Expect(labels["k8s_ns/label/foo"]).To(Equal("bar"))
+		Expect(labels["k8s_ns/label/roger"]).To(Equal("rabbit"))
 	})
 
-	It("should parse a Namespace to a Profile with deny rules", func() {
+	It("should parse a Namespace to a Profile with no labels", func() {
 		ns := k8sapi.Namespace{
 			ObjectMeta: k8sapi.ObjectMeta{
 				Name: "default",
@@ -409,13 +416,15 @@ var _ = Describe("Test Namespace conversion", func() {
 		// Ensure rules are correct.
 		inboundRules := p.Value.(*model.Profile).Rules.InboundRules
 		outboundRules := p.Value.(*model.Profile).Rules.OutboundRules
-		Expect(len(inboundRules)).To(Equal(1))
-		Expect(len(outboundRules)).To(Equal(1))
-		Expect(inboundRules[0].Action).To(Equal("deny"))
-		Expect(outboundRules[0].Action).To(Equal("allow"))
+		Expect(len(inboundRules)).To(Equal(0))
+		Expect(len(outboundRules)).To(Equal(0))
+
+		// Check labels.
+		labels := p.Value.(*model.Profile).Labels
+		Expect(len(labels)).To(Equal(0))
 	})
 
-	It("should fail for invalid annotation", func() {
+	It("should not fail for invalid annotation", func() {
 		ns := k8sapi.Namespace{
 			ObjectMeta: k8sapi.ObjectMeta{
 				Name: "default",
@@ -427,7 +436,7 @@ var _ = Describe("Test Namespace conversion", func() {
 		}
 
 		_, err := c.namespaceToProfile(&ns)
-		Expect(err).To(HaveOccurred())
+		Expect(err).NotTo(HaveOccurred())
 	})
 
 	It("should handle a valid but not DefaultDeny annotation", func() {
@@ -447,9 +456,7 @@ var _ = Describe("Test Namespace conversion", func() {
 		// Ensure rules are correct.
 		inboundRules := p.Value.(*model.Profile).Rules.InboundRules
 		outboundRules := p.Value.(*model.Profile).Rules.OutboundRules
-		Expect(len(inboundRules)).To(Equal(1))
-		Expect(len(outboundRules)).To(Equal(1))
-		Expect(inboundRules[0].Action).To(Equal("allow"))
-		Expect(outboundRules[0].Action).To(Equal("allow"))
+		Expect(len(inboundRules)).To(Equal(0))
+		Expect(len(outboundRules)).To(Equal(0))
 	})
 })

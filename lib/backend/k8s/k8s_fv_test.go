@@ -44,16 +44,17 @@ func (c cb) OnUpdates(updates []api.Update) {
 	for _, u := range updates {
 		switch u.UpdateType {
 		case api.UpdateTypeKVNew:
-			// Value should not be nil.
-			Expect(u.Value).NotTo(BeNil())
+			// Sometimes the value is nil (e.g ProfileTags)
+			log.Infof("[TEST] Syncer received new: %+v", u)
 		case api.UpdateTypeKVUpdated:
-			// Value should not be nil.
-			Expect(u.Value).NotTo(BeNil())
+			// Sometimes the value is nil (e.g ProfileTags)
+			log.Infof("[TEST] Syncer received updated: %+v", u)
 		case api.UpdateTypeKVDeleted:
-			// Ensure the value is nil.
+			// Ensure the value is nil for deletes.
+			log.Infof("[TEST] Syncer received deleted: %+v", u)
 			Expect(u.Value).To(BeNil())
 		case api.UpdateTypeKVUnknown:
-			panic(fmt.Sprintf("Received unkown update: %+v", u))
+			panic(fmt.Sprintf("[TEST] Syncer received unkown update: %+v", u))
 		}
 	}
 }
