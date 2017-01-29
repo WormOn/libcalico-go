@@ -387,7 +387,7 @@ var _ = Describe("Test Namespace conversion", func() {
 		p, err := c.namespaceToProfile(&ns)
 		Expect(err).NotTo(HaveOccurred())
 
-		// Ensure rules are correct.
+		// Ensure rules are correct for profile.
 		inboundRules := p.Value.(*model.Profile).Rules.InboundRules
 		outboundRules := p.Value.(*model.Profile).Rules.OutboundRules
 		Expect(len(inboundRules)).To(Equal(0))
@@ -397,6 +397,34 @@ var _ = Describe("Test Namespace conversion", func() {
 		labels := p.Value.(*model.Profile).Labels
 		Expect(labels["k8s_ns/label/foo"]).To(Equal("bar"))
 		Expect(labels["k8s_ns/label/roger"]).To(Equal("rabbit"))
+	})
+
+	It("should parse a Namespace to a Policy", func() {
+		ns := k8sapi.Namespace{
+			ObjectMeta: k8sapi.ObjectMeta{
+				Name: "default",
+				Labels: map[string]string{
+					"foo":   "bar",
+					"roger": "rabbit",
+				},
+				Annotations: map[string]string{},
+			},
+			Spec: k8sapi.NamespaceSpec{},
+		}
+
+		// Ensure it generates the correct Policy.
+		kvp, err := c.namespaceToPolicy(&ns)
+		Expect(err).NotTo(HaveOccurred())
+		key := kvp.Key.(model.PolicyKey)
+		policy := kvp.Value.(*model.Policy)
+		Expect(key.Name).To(Equal("ns.projectcalico.org/default"))
+		Expect(policy.Selector).To(Equal("calico/k8s_ns == 'default'"))
+		Expect(len(policy.InboundRules)).To(Equal(1))
+		Expect(len(policy.OutboundRules)).To(Equal(1))
+
+		allow := model.Rule{Action: "allow"}
+		Expect(policy.InboundRules[0]).To(Equal(allow))
+		Expect(policy.OutboundRules[0]).To(Equal(allow))
 	})
 
 	It("should parse a Namespace to a Profile with no labels", func() {
@@ -424,7 +452,35 @@ var _ = Describe("Test Namespace conversion", func() {
 		Expect(len(labels)).To(Equal(0))
 	})
 
-	It("should not fail for invalid annotation", func() {
+	It("should parse a Namespace to Policy (DefaultDeny)", func() {
+		ns := k8sapi.Namespace{
+			ObjectMeta: k8sapi.ObjectMeta{
+				Name: "default",
+				Annotations: map[string]string{
+					"net.beta.kubernetes.io/network-policy": "{\"ingress\": {\"isolation\": \"DefaultDeny\"}}",
+				},
+			},
+			Spec: k8sapi.NamespaceSpec{},
+		}
+
+		// Ensure it generates the correct Policy.
+		kvp, err := c.namespaceToPolicy(&ns)
+		Expect(err).NotTo(HaveOccurred())
+		key := kvp.Key.(model.PolicyKey)
+		policy := kvp.Value.(*model.Policy)
+		Expect(key.Name).To(Equal("ns.projectcalico.org/default"))
+		Expect(policy.Selector).To(Equal("calico/k8s_ns == 'default'"))
+		Expect(len(policy.InboundRules)).To(Equal(1))
+		Expect(len(policy.OutboundRules)).To(Equal(1))
+
+		allow := model.Rule{Action: "allow"}
+		deny := model.Rule{Action: "deny"}
+		Expect(policy.InboundRules[0]).To(Equal(deny))
+		Expect(policy.OutboundRules[0]).To(Equal(allow))
+
+	})
+
+	It("should not fail for malformed annotation", func() {
 		ns := k8sapi.Namespace{
 			ObjectMeta: k8sapi.ObjectMeta{
 				Name: "default",
@@ -435,8 +491,16 @@ var _ = Describe("Test Namespace conversion", func() {
 			Spec: k8sapi.NamespaceSpec{},
 		}
 
-		_, err := c.namespaceToProfile(&ns)
-		Expect(err).NotTo(HaveOccurred())
+		By("converting to a Profile", func() {
+			_, err := c.namespaceToProfile(&ns)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
+		By("converting to a Policy", func() {
+			_, err := c.namespaceToPolicy(&ns)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 	})
 
 	It("should handle a valid but not DefaultDeny annotation", func() {
@@ -450,13 +514,21 @@ var _ = Describe("Test Namespace conversion", func() {
 			Spec: k8sapi.NamespaceSpec{},
 		}
 
-		p, err := c.namespaceToProfile(&ns)
-		Expect(err).NotTo(HaveOccurred())
+		By("converting to a Profile", func() {
+			p, err := c.namespaceToProfile(&ns)
+			Expect(err).NotTo(HaveOccurred())
 
-		// Ensure rules are correct.
-		inboundRules := p.Value.(*model.Profile).Rules.InboundRules
-		outboundRules := p.Value.(*model.Profile).Rules.OutboundRules
-		Expect(len(inboundRules)).To(Equal(0))
-		Expect(len(outboundRules)).To(Equal(0))
+			// Ensure rules are correct.
+			inboundRules := p.Value.(*model.Profile).Rules.InboundRules
+			outboundRules := p.Value.(*model.Profile).Rules.OutboundRules
+			Expect(len(inboundRules)).To(Equal(0))
+			Expect(len(outboundRules)).To(Equal(0))
+		})
+
+		By("converting to a Policy", func() {
+			_, err := c.namespaceToPolicy(&ns)
+			Expect(err).NotTo(HaveOccurred())
+		})
+
 	})
 })

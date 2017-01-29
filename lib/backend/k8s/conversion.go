@@ -110,7 +110,9 @@ func (c converter) namespaceToPolicy(ns *kapiv1.Namespace) (*model.KVPair, error
 		if k == policyAnnotation {
 			np := namespacePolicy{}
 			if err := json.Unmarshal([]byte(v), &np); err != nil {
-				return nil, goerrors.New(fmt.Sprint("failed to parse annotation: %s", err))
+				// We want to handle this case gracefully since this can
+				// occur due to user error.
+				log.Warnf("Failed to parse annotation on Namespace '%s'.", ns.Name)
 			}
 			if np.Ingress.Isolation == "DefaultDeny" {
 				ingressAction = "deny"
