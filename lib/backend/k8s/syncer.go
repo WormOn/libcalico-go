@@ -352,7 +352,7 @@ func (syn *kubeSyncer) performSnapshot() ([]model.KVPair, map[string]bool, resou
 			tags.Revision = profile.Revision
 			labels.Revision = profile.Revision
 
-			// All create a Policy for this Namespace.
+			// Also create a Policy for this Namespace.
 			policy, err := syn.kc.converter.namespaceToPolicy(&ns)
 			if err != nil {
 				log.Panicf("%s", err)

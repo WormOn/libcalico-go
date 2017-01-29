@@ -66,7 +66,7 @@ func (c converter) parseWorkloadID(workloadID string) (string, string) {
 // parsePolicyNameNamespace extracts the Kubernetes Namespace that backs the given Policy.
 func (c converter) parsePolicyNameNamespace(name string) (string, error) {
 	// Policy objects backed by Namespaces have form "ns.projectcalico.org/<ns_name>"
-	if !strings.HasPrefix(name, "ns.projectcalico.org") {
+	if !strings.HasPrefix(name, "ns.projectcalico.org/") {
 		// This is not backed by a Kubernetes Namespace.
 		return "", fmt.Errorf("Policy %s not backed by a Namespace", name)
 	}
@@ -78,7 +78,7 @@ func (c converter) parsePolicyNameNamespace(name string) (string, error) {
 // parsePolicyNameNetworkPolicy extracts the Kubernetes Namespace and NetworkPolicy that backs the given Policy.
 func (c converter) parsePolicyNameNetworkPolicy(name string) (string, string, error) {
 	// Policies backed by NetworkPolicies have form "np.projectcalico.org/<ns_name>.<np_name>
-	if !strings.HasPrefix(name, "np.projectcalico.org") {
+	if !strings.HasPrefix(name, "np.projectcalico.org/") {
 		// This is not backed by a Kubernetes NetworkPolicy.
 		return "", "", fmt.Errorf("Policy %s not backed by a NetworkPolicy", name)
 	}
@@ -100,7 +100,9 @@ func (c converter) parseProfileName(profileName string) (string, error) {
 	return splits[1], nil
 }
 
-// namespaceToPolicy converts a Namespace to a Policy.
+// namespaceToPolicy converts a Namespace to a Policy.  We create a Policy per-Namespace
+// to implement per-Namespace ingress behavior (e.g DefaultDeny).  It also ensures that
+// every k8s Pod is selected by at least one Policy that allows egress traffic.
 func (c converter) namespaceToPolicy(ns *kapiv1.Namespace) (*model.KVPair, error) {
 	// Determine the ingress action based off the DefaultDeny annotation.
 	ingressAction := "allow"
@@ -116,12 +118,6 @@ func (c converter) namespaceToPolicy(ns *kapiv1.Namespace) (*model.KVPair, error
 		}
 	}
 
-	// Generate the labels to apply to the profile.
-	labels := map[string]string{}
-	for k, v := range ns.ObjectMeta.Labels {
-		labels[fmt.Sprintf("k8s_ns/label/%s", k)] = v
-	}
-
 	name := fmt.Sprintf("ns.projectcalico.org/%s", ns.ObjectMeta.Name)
 	kvp := model.KVPair{
 		Key: model.PolicyKey{Name: name},
@@ -135,22 +131,13 @@ func (c converter) namespaceToPolicy(ns *kapiv1.Namespace) (*model.KVPair, error
 	return &kvp, nil
 }
 
+// namespaceToProfile converts a Namespace to a Calico Profile.  The Profile stores
+// labels from the Namespace which are inherited by the WorkloadEndpoints within
+// the Profile, however no rules are populated.  Per-Namespace network
+// policy rules are implemented in namespaceToPolicy.
 func (c converter) namespaceToProfile(ns *kapiv1.Namespace) (*model.KVPair, error) {
-	// Determine the ingress action based off the DefaultDeny annotation.
-	ingressAction := "allow"
-	for k, v := range ns.ObjectMeta.Annotations {
-		if k == policyAnnotation {
-			np := namespacePolicy{}
-			if err := json.Unmarshal([]byte(v), &np); err != nil {
-				return nil, goerrors.New(fmt.Sprint("failed to parse annotation: %s", err))
-			}
-			if np.Ingress.Isolation == "DefaultDeny" {
-				ingressAction = "deny"
-			}
-		}
-	}
-
-	// Generate the labels to apply to the profile.
+	// Generate the labels to apply to the profile, using a special prefix
+	// to indicate that these are the labels from the parent Kubernetes Namespace.
 	labels := map[string]string{}
 	for k, v := range ns.ObjectMeta.Labels {
 		labels[fmt.Sprintf("k8s_ns/label/%s", k)] = v
@@ -160,12 +147,11 @@ func (c converter) namespaceToProfile(ns *kapiv1.Namespace) (*model.KVPair, erro
 	kvp := model.KVPair{
 		Key: model.ProfileKey{Name: name},
 		Value: &model.Profile{
-			Rules: model.ProfileRules{
-				InboundRules:  []model.Rule{model.Rule{Action: ingressAction}},
-				OutboundRules: []model.Rule{model.Rule{Action: "allow"}},
-			},
-			Tags:   []string{name},
 			Labels: labels,
+			Rules: model.ProfileRules{
+				InboundRules:  []model.Rule{},
+				OutboundRules: []model.Rule{},
+			},
 		},
 		Revision: ns.ObjectMeta.ResourceVersion,
 	}

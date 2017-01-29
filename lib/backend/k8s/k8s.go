@@ -566,7 +566,7 @@ func (c *KubeClient) getPolicy(k model.PolicyKey) (*model.KVPair, error) {
 	}
 
 	// Check to see if this is backed by a NetworkPolicy or a Namespace.
-	if strings.HasPrefix(k.Name, "np.projectcalico.org") {
+	if strings.HasPrefix(k.Name, "np.projectcalico.org/") {
 		// Backed by a NetworkPolicy. Parse out the namespace / name.
 		namespace, policyName, err := c.converter.parsePolicyNameNetworkPolicy(k.Name)
 		if err != nil {
@@ -586,7 +586,7 @@ func (c *KubeClient) getPolicy(k model.PolicyKey) (*model.KVPair, error) {
 			return nil, resources.K8sErrorToCalico(err, k)
 		}
 		return c.converter.networkPolicyToPolicy(&networkPolicy)
-	} else {
+	} else if strings.HasPrefix(k.Name, "ns.projectcalico.org/") {
 		// This is backed by a Namespace.
 		namespace, err := c.converter.parsePolicyNameNamespace(k.Name)
 		if err != nil {
